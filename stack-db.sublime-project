@@ -1,0 +1,21 @@
+{
+    "folders":
+    [
+        {
+            "path": "."
+        }
+    ],
+    "settings":
+    {
+        "tab_size": 4,
+        "translate_tabs_to_spaces": true,
+        "use_tab_stops": true,
+        "detect_indentation": true,
+        "auto_indent": true,
+        "trim_automatic_white_space": true,
+        "indent_subsequent_lines": true,
+        "trim_trailing_white_space_on_save": true,
+        "ensure_newline_at_eof_on_save": true,
+        "default_line_ending": "unix"
+    }
+}
