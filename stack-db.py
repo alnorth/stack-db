@@ -8,36 +8,58 @@ connection = Connection()
 db = connection.stackdb
 questions = db.questions
 
+questions.ensure_index("question_id")
+
 # For now we clear the collection before we start
 questions.remove()
 
-def import_question(questions, id, title, body, tags, last_activity_date, score, answer_count, accepted_answer_id):
-    question = {
-        "question_id": int(id),
-        "title": title,
-        "body": body,
-        "tags": tags,
-        "last_activity_date": last_activity_date,
-        "score": score,
-        "answer_count": answer_count,
-        "accepted_answer_id": accepted_answer_id,
-        "answers": []
-    }
-    questions.insert(question)
-
-def import_answer(questions, question_id, answer_id, body, last_activity_date, score):
-    answer = {
-        "answer_id": answer_id,
-        "body": body,
-        "last_activity_date": last_activity_date,
-        "score": score
-    }
+def import_question(questions, question_id, title, body, tags, last_activity_date, score, answer_count, accepted_answer_id):
     question = questions.find_one({"question_id": question_id})
-    if question:
-        question["answers"].append(answer)
+    exists = True
+    if not question:
+        question = {
+            "question_id": question_id,
+            "answers": []
+        }
+        exists = False
+    question["title"] = title
+    question["body"] = body
+    question["tags"] = tags
+    question["last_activity_date"] = last_activity_date
+    question["score"] = score
+    question["accepted_answer_id"] = accepted_answer_id
+
+    if exists:
         questions.update({"question_id": question_id}, question)
     else:
-        print "Missing question %s" % question_id
+        questions.insert(question)
+
+def import_answer(questions, question_id, answer_id, body, last_activity_date, score):
+    answer = None
+    question = questions.find_one({"question_id": question_id})
+    question_exists = False
+    if question:
+        for a in question["answers"]:
+            if a["answer_id"] == answer_id:
+                answer = a
+        question_exists = True
+        if not answer:
+            answer = {"answer_id": answer_id}
+            question["answers"].append(answer)
+    else:
+        answer = {"answer_id": answer_id}
+        question = {
+            "question_id": question_id,
+            "answers": [answer]
+        }
+    answer["body"] = body
+    answer["last_activity_date"] = last_activity_date
+    answer["score"] = score
+
+    if question_exists:
+        questions.update({"question_id": question_id}, question)
+    else:
+        questions.insert(question)
 
 class SOProcessor(handler.ContentHandler):
 
