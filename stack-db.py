@@ -1,6 +1,9 @@
 import dateutil.parser
 from pymongo import Connection
+import Queue
 import sys
+import threading
+import time
 from xml.sax import make_parser, handler
 
 # Set up the database connection
@@ -61,10 +64,17 @@ def import_answer(questions, question_id, answer_id, body, last_activity_date, s
     else:
         questions.insert(question)
 
-class SOProcessor(handler.ContentHandler):
 
-    def startElement(self, name, attrs):
-        if name == "row":
+class ThreadPosts(threading.Thread):
+
+    def __init__(self, queue):
+        threading.Thread.__init__(self)
+        self.queue = queue
+
+    def run(self):
+        while True:
+            attrs = self.queue.get()
+
             global questions
             if attrs["PostTypeId"] == "1":
                 import_question(
@@ -87,9 +97,31 @@ class SOProcessor(handler.ContentHandler):
                     dateutil.parser.parse(attrs["LastActivityDate"]),
                     int(attrs["Score"])
                 )
-            if int(attrs["Id"]) % 1000 == 0:
-                print attrs["Id"]
+
+class SOProcessor(handler.ContentHandler):
+
+    def __init__(self, queue):
+        handler.ContentHandler.__init__(self)
+        self.queue = queue
+
+    def startElement(self, name, attrs):
+        if name == "row":
+            self.queue.put(attrs)
+            print self.queue.qsize()
+            if self.queue.qsize() > 5000:
+                # MongoDB's going a little slow, give it time to catch up
+                time.sleep(2)
+
+queue = Queue.Queue()
+
+# Start 5 threads to process questions once they're retrieved from the XML
+for i in range(5):
+    t = ThreadPosts(queue)
+    t.setDaemon(True)
+    t.start()
 
 parser = make_parser()
-parser.setContentHandler(SOProcessor())
+parser.setContentHandler(SOProcessor(queue))
 parser.parse(open(sys.argv[1]))
+
+queue.join()
