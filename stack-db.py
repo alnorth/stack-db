@@ -1,8 +1,6 @@
 import dateutil.parser
 from pymongo import Connection
-import Queue
 import sys
-import threading
 import time
 from xml.sax import make_parser, handler
 
@@ -16,68 +14,40 @@ questions.ensure_index("question_id")
 # For now we clear the collection before we start
 questions.remove()
 
-def import_question(questions, question_id, title, body, tags, last_activity_date, score, answer_count, accepted_answer_id):
-    question = questions.find_one({"question_id": question_id})
-    exists = True
-    if not question:
-        question = {
-            "question_id": question_id,
-            "answers": []
-        }
-        exists = False
-    question["title"] = title
-    question["body"] = body
-    question["tags"] = tags
-    question["last_activity_date"] = last_activity_date
-    question["score"] = score
-    question["accepted_answer_id"] = accepted_answer_id
+# This function assumes that the question isn't present already
+def insert_question(questions, question_id, title, body, tags, last_activity_date, score, answer_count, accepted_answer_id):
+    question = {
+        "question_id": question_id,
+        "title": title,
+        "body": body,
+        "tags": tags,
+        "last_activity_date": last_activity_date,
+        "score": score,
+        "accepted_answer_id": accepted_answer_id,
+        "answers": []
+    }
 
-    if exists:
-        questions.update({"question_id": question_id}, question)
-    else:
-        questions.insert(question)
+    questions.insert(question)
 
-def import_answer(questions, question_id, answer_id, body, last_activity_date, score):
-    answer = None
-    question = questions.find_one({"question_id": question_id})
-    question_exists = False
-    if question:
-        for a in question["answers"]:
-            if a["answer_id"] == answer_id:
-                answer = a
-        question_exists = True
-        if not answer:
-            answer = {"answer_id": answer_id}
-            question["answers"].append(answer)
-    else:
-        answer = {"answer_id": answer_id}
-        question = {
-            "question_id": question_id,
-            "answers": [answer]
-        }
-    answer["body"] = body
-    answer["last_activity_date"] = last_activity_date
-    answer["score"] = score
+# This function assumes that the answer isn't present already
+def insert_answer(questions, question_id, answer_id, body, last_activity_date, score):
+    answer = {
+        "answer_id": answer_id,
+        "body": body,
+        "last_activity_date": last_activity_date,
+        "score": score
+    }
 
-    if question_exists:
-        questions.update({"question_id": question_id}, question)
-    else:
-        questions.insert(question)
+    result = questions.update({"question_id": question_id}, { "$push": { "answers":  answer}}, safe=True)
+    if result["n"] != 1:
+        print "Answer found for non-existent question, q=%i, a=%i" % (question_id, answer_id)
 
 
-class ThreadPosts(threading.Thread):
-
-    def __init__(self, queue):
-        threading.Thread.__init__(self)
-        self.queue = queue
-
-    def run(self):
-        while True:
-            attrs = self.queue.get()
-
-            global questions
+class QuestionProcessor(handler.ContentHandler):
+    def startElement(self, name, attrs):
+        if name == "row":
             if attrs["PostTypeId"] == "1":
-                import_question(
+                insert_question(
                     questions,
                     int(attrs["Id"]),
                     attrs["Title"],
@@ -88,8 +58,15 @@ class ThreadPosts(threading.Thread):
                     int(attrs["AnswerCount"]) if "AnswerCount" in attrs else 0,
                     int(attrs["AcceptedAnswerId"]) if "AcceptedAnswerId" in attrs else 0
                 )
+
+            if int(attrs["Id"]) % 5000 == 0:
+                print attrs["Id"]
+
+class AnswerProcessor(handler.ContentHandler):
+    def startElement(self, name, attrs):
+        if name == "row":
             if attrs["PostTypeId"] == "2":
-                import_answer(
+                insert_answer(
                     questions,
                     int(attrs["ParentId"]),
                     int(attrs["Id"]),
@@ -98,41 +75,19 @@ class ThreadPosts(threading.Thread):
                     int(attrs["Score"])
                 )
 
-class ThreadQueueStatus(threading.Thread):
+            if int(attrs["Id"]) % 5000 == 0:
+                print attrs["Id"]
 
-    def __init__(self, queue):
-        threading.Thread.__init__(self)
-        self.queue = queue
+# In some of the data dumps answers appear before the questions they're answering.
+# We deal with this by running over the posts.xml twice. We import questions the
+# first time, and then answers.
 
-    def run(self):
-        while True:
-            print "Queue size - %i" % self.queue.qsize()
-            time.sleep(30)
+print "Importing questions ..."
+qparser = make_parser()
+qparser.setContentHandler(QuestionProcessor())
+qparser.parse(open(sys.argv[1]))
 
-class SOProcessor(handler.ContentHandler):
-
-    def __init__(self, queue):
-        handler.ContentHandler.__init__(self)
-        self.queue = queue
-
-    def startElement(self, name, attrs):
-        if name == "row":
-            self.queue.put(attrs)
-
-queue = Queue.Queue(maxsize=5000)
-
-# Start 5 threads to process questions once they're retrieved from the XML
-for i in range(5):
-    t = ThreadPosts(queue)
-    t.setDaemon(True)
-    t.start()
-
-status = ThreadQueueStatus(queue)
-status.setDaemon(True)
-status.start()
-
-parser = make_parser()
-parser.setContentHandler(SOProcessor(queue))
-parser.parse(open(sys.argv[1]))
-
-queue.join()
+print "Importing answers ..."
+aparser = make_parser()
+aparser.setContentHandler(AnswerProcessor())
+aparser.parse(open(sys.argv[1]))
