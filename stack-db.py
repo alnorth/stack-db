@@ -119,11 +119,7 @@ class SOProcessor(handler.ContentHandler):
         if name == "row":
             self.queue.put(attrs)
 
-            if self.queue.qsize() > 5000:
-                # MongoDB's going a little slow, give it time to catch up
-                time.sleep(2)
-
-queue = Queue.Queue()
+queue = Queue.Queue(maxsize=5000)
 
 # Start 5 threads to process questions once they're retrieved from the XML
 for i in range(5):
