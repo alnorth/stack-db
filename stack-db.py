@@ -15,7 +15,7 @@ if len(sys.argv) == 2:
     # Make sure it's empty
     tmp_posts.remove()
 
-    tmp_posts.ensure_index("question_id", unique=True)
+    tmp_posts.ensure_index("question_id")
 
     class SOProcessor(handler.ContentHandler):
         def startElement(self, name, attrs):
@@ -71,7 +71,7 @@ if len(sys.argv) == 2:
                     "   });"
                     "   return result;"
                     "}")
-    questions = db.tmp_posts.map_reduce(map, reduce, "questions")
+    questions = tmp_posts.map_reduce(map, reduce, "questions")
     print "Questions - %s" % questions.count()
 
-    db.tmp_posts.remove()
+    tmp_posts.drop()
