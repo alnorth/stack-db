@@ -9,7 +9,8 @@ connection = Connection()
 db = connection.stackdb
 questions = db.questions
 
-questions.ensure_index("question_id")
+questions.ensure_index("question_id", unique=True)
+questions.ensure_index("answers.answer_id", unique=True, sparse=True)
 
 # For now we clear the collection before we start
 questions.remove()
