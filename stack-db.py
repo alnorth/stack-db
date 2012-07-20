@@ -14,50 +14,23 @@ questions.ensure_index("question_id")
 # For now we clear the collection before we start
 questions.remove()
 
-# This function assumes that the question isn't present already
-def insert_question(questions, question_id, title, body, tags, last_activity_date, score, answer_count, accepted_answer_id):
-    question = {
-        "question_id": question_id,
-        "title": title,
-        "body": body,
-        "tags": tags,
-        "last_activity_date": last_activity_date,
-        "score": score,
-        "accepted_answer_id": accepted_answer_id,
-        "answers": []
-    }
-
-    questions.insert(question)
-
-# This function assumes that the answer isn't present already
-def insert_answer(questions, question_id, answer_id, body, last_activity_date, score):
-    answer = {
-        "answer_id": answer_id,
-        "body": body,
-        "last_activity_date": last_activity_date,
-        "score": score
-    }
-
-    result = questions.update({"question_id": question_id}, { "$push": { "answers":  answer}}, safe=True)
-    if result["n"] != 1:
-        print "Answer found for non-existent question, q=%i, a=%i" % (question_id, answer_id)
-
-
 class QuestionProcessor(handler.ContentHandler):
     def startElement(self, name, attrs):
         if name == "row":
             if attrs["PostTypeId"] == "1":
-                insert_question(
-                    questions,
-                    int(attrs["Id"]),
-                    attrs["Title"],
-                    attrs["Body"],
-                    attrs["Tags"].lstrip("<").rstrip(">").split("><"),
-                    dateutil.parser.parse(attrs["LastActivityDate"]),
-                    int(attrs["Score"]),
-                    int(attrs["AnswerCount"]) if "AnswerCount" in attrs else 0,
-                    int(attrs["AcceptedAnswerId"]) if "AcceptedAnswerId" in attrs else 0
-                )
+                question = {
+                    "question_id": int(attrs["Id"]),
+                    "title": attrs["Title"],
+                    "body": attrs["Body"],
+                    "tags": attrs["Tags"].lstrip("<").rstrip(">").split("><"),
+                    "last_activity_date": dateutil.parser.parse(attrs["LastActivityDate"]),
+                    "score": int(attrs["Score"]),
+                    "accepted_answer_id": int(attrs["AcceptedAnswerId"]) if "AcceptedAnswerId" in attrs else 0,
+                    "answers": []
+                }
+
+                # We assume that the question doesn't exist yet
+                questions.insert(question)
 
             if int(attrs["Id"]) % 5000 == 0:
                 print attrs["Id"]
@@ -66,14 +39,17 @@ class AnswerProcessor(handler.ContentHandler):
     def startElement(self, name, attrs):
         if name == "row":
             if attrs["PostTypeId"] == "2":
-                insert_answer(
-                    questions,
-                    int(attrs["ParentId"]),
-                    int(attrs["Id"]),
-                    attrs["Body"],
-                    dateutil.parser.parse(attrs["LastActivityDate"]),
-                    int(attrs["Score"])
-                )
+                answer = {
+                    "answer_id": int(attrs["Id"]),
+                    "body": attrs["Body"],
+                    "last_activity_date": dateutil.parser.parse(attrs["LastActivityDate"]),
+                    "score": int(attrs["Score"])
+                }
+
+                # We assume that the question exists, but not the answer
+                result = questions.update({"question_id": int(attrs["ParentId"])}, { "$push": { "answers":  answer}}, safe=True)
+                if result["n"] != 1:
+                    print "Answer found for non-existent question, q=%s, a=%s" % (attrs["ParentId"], attrs["Id"])
 
             if int(attrs["Id"]) % 5000 == 0:
                 print attrs["Id"]
