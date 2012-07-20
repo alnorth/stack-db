@@ -98,6 +98,17 @@ class ThreadPosts(threading.Thread):
                     int(attrs["Score"])
                 )
 
+class ThreadQueueStatus(threading.Thread):
+
+    def __init__(self, queue):
+        threading.Thread.__init__(self)
+        self.queue = queue
+
+    def run(self):
+        while True:
+            print "Queue size - %i" % self.queue.qsize()
+            time.sleep(30)
+
 class SOProcessor(handler.ContentHandler):
 
     def __init__(self, queue):
@@ -107,7 +118,7 @@ class SOProcessor(handler.ContentHandler):
     def startElement(self, name, attrs):
         if name == "row":
             self.queue.put(attrs)
-            print self.queue.qsize()
+
             if self.queue.qsize() > 5000:
                 # MongoDB's going a little slow, give it time to catch up
                 time.sleep(2)
@@ -119,6 +130,10 @@ for i in range(5):
     t = ThreadPosts(queue)
     t.setDaemon(True)
     t.start()
+
+status = ThreadQueueStatus(queue)
+status.setDaemon(True)
+status.start()
 
 parser = make_parser()
 parser.setContentHandler(SOProcessor(queue))
