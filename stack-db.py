@@ -59,7 +59,7 @@ if len(sys.argv) == 2:
     print "Running Map/Reduce ..."
     map = Code("function () { emit(this.question_id, this); }")
     reduce = Code("function (question_id, questions) {"
-                    "   var result = {};"
+                    "   var result = {answers: []};"
                     "   questions.forEach(function(q) {"
                     "       result.title = result.title || q.title;"
                     "       result.body = result.body || q.body;"
