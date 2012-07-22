@@ -89,6 +89,7 @@ if len(sys.argv) == 2:
     qparser.setContentHandler(SOProcessor(pf))
     qparser.parse(pf)
 
+    print ""
     print "Running Map/Reduce ..."
     map = Code("function () { emit(this.question_id, this); }")
     reduce = Code("function (question_id, questions) {"
