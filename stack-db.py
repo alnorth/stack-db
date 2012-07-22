@@ -105,7 +105,8 @@ if len(sys.argv) == 2:
                     "   });"
                     "   return result;"
                     "}")
-    questions = tmp_posts.map_reduce(map, reduce, "questions")
+    finalize = Code("function (key, value) { value.question_id = key; return value;}")
+    questions = tmp_posts.map_reduce(map, reduce, "questions", finalize=finalize)
     print "Questions - %s" % questions.count()
 
     tmp_posts.drop()
