@@ -2,14 +2,20 @@ from bson.code import Code
 import dateutil.parser
 import math
 import os
-from pymongo import Connection
+import pymongo
 import sys
 import time
 from xml.sax import make_parser, handler
 
 # Set up the database connection
-connection = Connection()
+connection = pymongo.Connection()
 db = connection.stackdb
+
+def print_percentage(percentage):
+    hashes = int(math.floor(percentage)/2)
+    text = "\r[{0}{1}] {2}%".format("#" * hashes, " " * (50 - hashes), round(percentage, 1))
+    sys.stdout.write(text)
+    sys.stdout.flush()
 
 if len(sys.argv) == 2:
     # Set up a temporary collection for insertion
@@ -17,7 +23,7 @@ if len(sys.argv) == 2:
     # Make sure it's empty
     tmp_posts.drop()
 
-    tmp_posts.ensure_index("question_id")
+    tmp_posts.ensure_index([("question_id", pymongo.ASCENDING), ("post_type", pymongo.ASCENDING)])
 
     class SOProcessor(handler.ContentHandler):
 
@@ -30,6 +36,7 @@ if len(sys.argv) == 2:
                 if attrs["PostTypeId"] == "1":
                     question = {
                         "question_id": int(attrs["Id"]),
+                        "post_type": 1,
                         "title": attrs["Title"],
                         "body": attrs["Body"],
                         "tags": attrs["Tags"].lstrip("<").rstrip(">").split("><"),
@@ -49,6 +56,7 @@ if len(sys.argv) == 2:
                     }
                     question = {
                         "question_id": int(attrs["ParentId"]),
+                        "post_type": 2,
                         "answers": [answer]
                     }
                     tmp_posts.insert(question)
@@ -76,10 +84,7 @@ if len(sys.argv) == 2:
             return float(self.delivered) / self.size * 100.0
 
         def print_progress(self):
-            hashes = int(math.floor(self.percentage)/2)
-            text = "\r[{0}{1}] {2}%".format("#" * hashes, " " * (50 - hashes), round(self.percentage, 1))
-            sys.stdout.write(text)
-            sys.stdout.flush()
+            print_percentage(self.percentage)
 
     # We insert everything to start with, then use Map/Reduce to bring answers and questions together
 
@@ -88,25 +93,30 @@ if len(sys.argv) == 2:
     pf = PercentageFile(sys.argv[1])
     qparser.setContentHandler(SOProcessor(pf))
     qparser.parse(pf)
-
     print ""
-    print "Running Map/Reduce ..."
-    map = Code("function () { emit(this.question_id, this); }")
-    reduce = Code("function (question_id, questions) {"
-                    "   var result = {answers: []};"
-                    "   questions.forEach(function(q) {"
-                    "       result.title = result.title || q.title;"
-                    "       result.body = result.body || q.body;"
-                    "       result.tags = result.tags || q.tags;"
-                    "       result.last_activity_date = result.last_activity_date || q.last_activity_date;"
-                    "       result.score = result.score || q.score;"
-                    "       result.accepted_answer_id = result.accepted_answer_id || q.accepted_answer_id;"
-                    "       result.answers = result.answers.concat(q.answers);"
-                    "   });"
-                    "   return result;"
-                    "}")
-    finalize = Code("function (key, value) { value.question_id = key; return value;}")
-    questions = tmp_posts.map_reduce(map, reduce, "questions", finalize=finalize)
-    print "Questions - %s" % questions.count()
+
+    # Collection for combined questions
+    questions = db.questions
+    # Make sure it's empty
+    questions.drop()
+
+    print "Combining posts"
+    current_question = None
+    num_posts = tmp_posts.count()
+    current_index = 0
+    for post in tmp_posts.find(sort=[("question_id", pymongo.ASCENDING), ("post_type", pymongo.ASCENDING)]):
+        if post["post_type"] == 1:
+            if current_question:
+                # We're moving on to the next question, save the current one.
+                questions.insert(current_question)
+            current_question = post
+        else:
+            current_question["answers"].append(post["answers"][0])
+        current_index += 1
+        print_percentage(float(current_index) / num_posts * 100.0)
+
+    # Insert the last one
+    questions.insert(current_question)
+    print ""
 
     tmp_posts.drop()
