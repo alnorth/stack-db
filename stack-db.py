@@ -140,6 +140,7 @@ latest_activity_date_as_unix = int(time.mktime(latest_activity_date.timetuple())
 print "Fetching questions active after %s" % str(latest_activity_date)
 
 rq = so.recent_questions(min=latest_activity_date_as_unix, order="asc", pagesize=100)
+index = 0
 requests_left_current = 0
 
 for q in rq:
@@ -177,9 +178,14 @@ for q in rq:
     else:
         questions.insert(question)
 
+    # Print progress every 100 questions
+    index += 1
+    if index % 100 == 0:
+        print_percentage(100 * (q.last_activity_date - latest_activity_date).total_seconds() / (datetime.utcnow() - latest_activity_date).total_seconds())
+
     # Monitor our request allowance. Pause if we're running out
     if (requests_left_current != so.requests_left) and so.requests_left < 100:
-        print "%s requests left, pausing" % so.requests_left
+        print "\n%s requests left, pausing" % so.requests_left
         requests_left_current = so.requests_left
         time.sleep(60)
 
