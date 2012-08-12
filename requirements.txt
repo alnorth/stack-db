@@ -1,5 +1,6 @@
 argparse==1.2.1
 distribute==0.6.24
+-e git://github.com/alnorth29/Py-StackExchange.git@1a5e842fcb8e1f0c44ad8d8c12d36ad07c7b014a#egg=py_stackexchange-dev
 pymongo==2.2.1
 python-dateutil==2.1
 six==1.1.0

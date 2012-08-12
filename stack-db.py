@@ -1,8 +1,10 @@
 from bson.code import Code
+from datetime import datetime
 import dateutil.parser
 import math
 import os
 import pymongo
+import stackexchange
 import sys
 import time
 from xml.sax import make_parser, handler
@@ -41,6 +43,7 @@ if len(sys.argv) == 2:
                         "body": attrs["Body"],
                         "tags": attrs["Tags"].lstrip("<").rstrip(">").split("><"),
                         "last_activity_date": dateutil.parser.parse(attrs["LastActivityDate"]),
+                        "last_updated_date": dateutil.parser.parse(attrs["LastActivityDate"]),
                         "score": int(attrs["Score"]),
                         "accepted_answer_id": int(attrs["AcceptedAnswerId"]) if "AcceptedAnswerId" in attrs else 0,
                         "answers": []
@@ -108,6 +111,7 @@ if len(sys.argv) == 2:
         if post["post_type"] == 1:
             if current_question:
                 # We're moving on to the next question, save the current one.
+                # TODO: remove the post_type field
                 questions.insert(current_question)
             current_question = post
         else:
@@ -120,3 +124,62 @@ if len(sys.argv) == 2:
     print ""
 
     tmp_posts.drop()
+
+# Now we update the questions in the database.
+so = stackexchange.Site(stackexchange.StackOverflow)
+so.be_inclusive()
+so.impose_throttling = True
+
+questions = db.questions
+questions.ensure_index([("question_id", pymongo.ASCENDING)])
+questions.ensure_index([("last_activity_date", pymongo.DESCENDING)])
+
+latest_active_question = questions.find_one(sort=[("last_activity_date", pymongo.DESCENDING)])
+latest_activity_date = latest_active_question["last_activity_date"]
+latest_activity_date_as_unix = int(time.mktime(latest_activity_date.timetuple()))
+print "Fetching questions active after %s" % str(latest_activity_date)
+
+rq = so.recent_questions(min=latest_activity_date_as_unix, order="asc", pagesize=100)
+requests_left_current = 0
+
+for q in rq:
+    question = questions.find_one({"question_id": int(q.id)})
+    previously_existed = False
+    if question:
+        previously_existed = True
+    else:
+        question = {
+            "question_id": int(q.id)
+        }
+
+    question["title"] = q.title
+    question["body"] = q.body
+    question["tags"] = q.tags
+    question["last_activity_date"] = q.last_activity_date
+    question["last_updated_date"] = datetime.utcnow()
+    question["score"] = int(q.score)
+    if hasattr(q, "accepted_answer_id"):
+        question["accepted_answer_id"] = int(q.accepted_answer_id)
+
+    q_answers = []
+    for a in q.answers:
+        q_a = {
+            "answer_id": a.id,
+            "body": a.body,
+            "last_activity_date": a.last_activity_date,
+            "score": a.score
+        }
+        q_answers.append(q_a)
+    question["answers"] = q_answers
+
+    if previously_existed:
+        questions.update({"question_id": int(q.id)}, question)
+    else:
+        questions.insert(question)
+
+    # Monitor our request allowance. Pause if we're running out
+    if (requests_left_current != so.requests_left) and so.requests_left < 100:
+        print "%s requests left, pausing" % so.requests_left
+        requests_left_current = so.requests_left
+        time.sleep(60)
+
