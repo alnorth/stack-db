@@ -88,7 +88,7 @@ if len(sys.argv) == 2:
 
     # We insert everything to start with, then use Map/Reduce to bring answers and questions together
 
-    print "Importing posts ..."
+    print "Importing posts..."
     qparser = make_parser()
     pf = PercentageFile(sys.argv[1])
     qparser.setContentHandler(SOProcessor(pf))
@@ -100,7 +100,7 @@ if len(sys.argv) == 2:
     # Make sure it's empty
     questions.drop()
 
-    print "Combining posts"
+    print "Combining posts..."
     current_question = None
     num_posts = tmp_posts.count()
     current_index = 0
